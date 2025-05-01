@@ -2,22 +2,13 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-import requests
-import re
 
-# ------------------------
-# 数据加载函数
-
+# ---------------------
 @st.cache_data
 def load_base_currencies():
-    repo_url = "https://api.github.com/repos/elvin1212/currency-data/contents"
-    response = requests.get(repo_url)
-    files = response.json()
-    base_currencies = sorted(set(
-        re.sub(r"_from_1999_cleaned.csv", "", f["name"])
-        for f in files if f["name"].endswith(".csv")
-    ))
-    return base_currencies
+    url = "https://raw.githubusercontent.com/elvin1212/currency-data/main/USD_from_1999_cleaned.csv"
+    df = pd.read_csv(url)
+    return sorted(df['base_currency'].unique()) if 'base_currency' in df.columns else ['USD', 'EUR', 'JPY', 'GBP', 'AUD']
 
 @st.cache_data
 def load_date_range(base_currency):
@@ -33,9 +24,6 @@ def load_filtered_data(base_currency, selected_currencies, start_date, end_date)
     df = df[(df["date"] >= pd.to_datetime(start_date)) & (df["date"] <= pd.to_datetime(end_date))]
     return df
 
-# ------------------------
-# 回测逻辑
-
 def simulate_portfolio(df, selected_currencies, weights):
     df_pivot = df.pivot(index='date', columns='quote_currency', values='rate').dropna()
     df_pivot = df_pivot[selected_currencies]
@@ -50,7 +38,7 @@ def simulate_portfolio(df, selected_currencies, weights):
     drawdown = (portfolio_value / portfolio_value.cummax()) - 1
     max_drawdown = drawdown.min()
 
-    result = {
+    return {
         "portfolio_value": portfolio_value,
         "portfolio_returns": portfolio_returns,
         "drawdown": drawdown,
@@ -59,19 +47,22 @@ def simulate_portfolio(df, selected_currencies, weights):
         "sharpe_ratio": sharpe_ratio,
         "max_drawdown": max_drawdown
     }
-    return result
 
-# ------------------------
-# Streamlit 页面布局
-
+# ---------------------
 st.set_page_config(page_title="Currency Portfolio Simulator", layout="wide")
 st.sidebar.header("Simulation Settings")
 
 base_currency = st.sidebar.selectbox("Select Base Currency", load_base_currencies())
-min_date, max_date = load_date_range(base_currency)
 
-df_temp = pd.read_csv(f"https://raw.githubusercontent.com/elvin1212/currency-data/main/{base_currency}_from_1999_cleaned.csv")
-quote_currencies = df_temp['quote_currency'].unique().tolist()
+try:
+    min_date, max_date = load_date_range(base_currency)
+    url = f"https://raw.githubusercontent.com/elvin1212/currency-data/main/{base_currency}_from_1999_cleaned.csv"
+    df_temp = pd.read_csv(url)
+    quote_currencies = sorted(df_temp['quote_currency'].unique().tolist())
+except Exception as e:
+    st.error("⚠️ Error loading initial data. Please check data file or URL format.")
+    st.stop()
+
 selected_currencies = st.sidebar.multiselect("Select currencies to invest", quote_currencies)
 
 start_date = st.sidebar.date_input("Start Date", min_value=min_date, max_value=max_date, value=min_date)
